@@ -81,7 +81,8 @@ def loadDatasetPickle(embeddingsPickle):
 
 
 
-def readEmbeddings(embeddingsPath, datasetFiles, frequencyThresholdUnknownTokens, reducePretrainedEmbeddings):
+def readEmbeddings(embeddingsPath, datasetFiles, frequencyThresholdUnknownTokens,
+                   reducePretrainedEmbeddings):
     """
     Reads the embeddingsPath.
     :param embeddingsPath: File path to pretrained embeddings

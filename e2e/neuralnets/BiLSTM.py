@@ -14,6 +14,7 @@ from keras.optimizers import *
 from keras.models import Model
 from keras.layers import *
 from keras_contrib.layers import CRF
+from keras.utils import Progbar
 import math
 import numpy as np
 import sys
@@ -49,13 +50,14 @@ class BiLSTM:
         self.embeddings = embeddings
         self.mappings = mappings
 
-    def setDataset(self, datasets, data):
+    def setDataset(self, datasets, data, epoch_size = 475):
         self.datasets = datasets
         self.data = data
 
         # Create some helping variables
         self.mainModelName = None
         self.epoch = 0
+        self.epoch_size = epoch_size # number of mini-batch-ranges in one epoch
         self.learning_rate_updates = {'sgd': {1: 0.1, 3: 0.05, 5: 0.01}}
         self.modelNames = list(self.datasets.keys())
         self.evaluateModelNames = []
@@ -100,7 +102,7 @@ class BiLSTM:
 
         # [batch_size, max_seq_len]
         tokens_input = Input(shape=(None,), dtype='int32', name='words_input')
-        # [batch_size, max_seq_len, 300]
+        # [batch_size, max_seq_len, 100]
         tokens = Embedding(input_dim=self.embeddings.shape[0],
                            output_dim=self.embeddings.shape[1],
                            weights=[self.embeddings],
@@ -126,7 +128,7 @@ class BiLSTM:
             mergeInputLayers.append(feature_embedding)
 
 
-        # :: Character Embeddings ::
+        # Character Embeddings
         if self.params['charEmbeddings'] not in [None, "None", "none", False, "False", "false"]:
             charset = self.mappings['characters']
             charEmbeddingsSize = self.params['charEmbeddingsSize']
@@ -173,7 +175,7 @@ class BiLSTM:
             inputNodes.append(chars_input)
             mergeInputLayers.append(chars)
 
-        # :: Task Identifier ::
+        # Task Identifier
         if self.params['useTaskIdentifier']:
             self.addTaskIdentifier()
 
@@ -265,12 +267,12 @@ class BiLSTM:
                     assert(False) #Wrong classifier
                 cnt += 1
 
-            # :: Parameters for the optimizer ::
+            # Parameters for the optimizer
             optimizerParams = {}
-            if 'clipnorm' in self.params and self.params['clipnorm'] != None and  self.params['clipnorm'] > 0:
+            if 'clipnorm' in self.params and self.params['clipnorm'] != None and self.params['clipnorm'] > 0:
                 optimizerParams['clipnorm'] = self.params['clipnorm']
 
-            if 'clipvalue' in self.params and self.params['clipvalue'] != None and  self.params['clipvalue'] > 0:
+            if 'clipvalue' in self.params and self.params['clipvalue'] != None and self.params['clipvalue'] > 0:
                 optimizerParams['clipvalue'] = self.params['clipvalue']
 
             if self.params['optimizer'].lower() == 'adam':
@@ -288,7 +290,7 @@ class BiLSTM:
 
 
             model = Model(inputs=inputNodes, outputs=[output])
-            model.compile(loss=lossFct, optimizer=opt)
+            model.compile(optimizer=opt, loss=lossFct)
 
             model.summary(line_length=125)
             #logging.info(model.get_config())
@@ -308,12 +310,23 @@ class BiLSTM:
                 K.set_value(self.models[modelName].optimizer.lr,
                             self.learning_rate_updates[self.params['optimizer']][self.epoch])
 
-
+        losses = {}
+        bar_count = 1
+        bar = Progbar(self.epoch_size)
         for batch in self.minibatch_iterate_dataset():
+            bar.update(bar_count) # used to display progress bar
+            bar_count += 1
             for modelName in self.modelNames:
                 nnLabels = batch[modelName][0]
                 nnInput = batch[modelName][1:]
-                self.models[modelName].train_on_batch(nnInput, nnLabels)
+                batch_loss = self.models[modelName].train_on_batch(nnInput, nnLabels)
+
+                if modelName not in losses:
+                    losses[modelName] = []
+                losses[modelName].append(float(batch_loss))
+
+        for modelName in self.modelNames:
+            print("Train-Data: Mean Loss: {0:.5f}".format(np.mean(losses[modelName])))
 
 
     def minibatch_iterate_dataset(self, modelNames = None):
@@ -383,6 +396,7 @@ class BiLSTM:
             rangeLength = len(self.trainMiniBatchRanges[self.mainModelName])
         else:
             rangeLength = min([len(self.trainMiniBatchRanges[modelName]) for modelName in modelNames])
+        self.epoch_size = rangeLength
 
         batches = {}
         for idx in range(rangeLength):
@@ -394,21 +408,19 @@ class BiLSTM:
 
                 # labels_data
                 # [miniBatchSize, sent_len]
-                labels = np.asarray([trainMatrix[idx][self.labelKeys[modelName]] for idx in range(dataRange[0], dataRange[1])])
+                labels = np.asarray([trainMatrix[idx][self.labelKeys[modelName]] \
+                    for idx in range(dataRange[0], dataRange[1])])
                 # [miniBatchSize, sent_len, 1]
                 labels = np.expand_dims(labels, -1)
                 batches[modelName] = [labels]
-                # print("labels:\n", labels)
 
                 # imput_data
                 for featureName in self.params['featureNames']:
                     # [miniBatchSize, sent_len] for 'tokens', 'casing'
                     # [miniBatchSize, sent_len, list] for 'characters'
-                    inputData = np.asarray([trainMatrix[idx][featureName] for idx in range(dataRange[0], dataRange[1])])
+                    inputData = np.asarray([trainMatrix[idx][featureName] \
+                        for idx in range(dataRange[0], dataRange[1])])
                     batches[modelName].append(inputData)
-                    # print("{}:\n".format(featureName))
-                    # print(inputData)
-
             yield batches
 
 
@@ -417,7 +429,6 @@ class BiLSTM:
             directory = os.path.dirname(resultsFilepath)
             if not os.path.exists(directory):
                 os.makedirs(directory)
-
             self.resultsSavePath = open(resultsFilepath, 'w')
         else:
             self.resultsSavePath = None
@@ -444,9 +455,9 @@ class BiLSTM:
             start_time = time.time()
             for modelName in self.evaluateModelNames:
                 logging.info("-- %s --" % (modelName))
-                dev_score, test_score = self.computeScore(modelName, self.data[modelName]['devMatrix'],
+                dev_score, test_score = self.computeScore(modelName,
+                                                          self.data[modelName]['devMatrix'],
                                                           self.data[modelName]['testMatrix'])
-
                 if dev_score > max_dev_score[modelName]:
                     max_dev_score[modelName] = dev_score
                     max_test_score[modelName] = test_score
@@ -465,13 +476,14 @@ class BiLSTM:
                     self.resultsSavePath.write("\n")
                     self.resultsSavePath.flush()
 
-                logging.info("Max: %.4f dev; %.4f test" % (max_dev_score[modelName], max_test_score[modelName]))
+                logging.info("\nScores from epoch with best dev-scores:\n")
+                logging.info("  Dev-Score: %.4f\n  Test-Score: %.4f" % (max_dev_score[modelName], max_test_score[modelName]))
                 logging.info("")
 
             logging.info("%.2f sec for evaluation" % (time.time() - start_time))
 
             if self.params['earlyStopping']  > 0 and no_improvement_since >= self.params['earlyStopping']:
-                logging.info("!!! Early stopping, no improvement after "+str(no_improvement_since)+" epochs !!!")
+                logging.info("!!! Early stopping, no improvement after "+ str(no_improvement_since)+" epochs !!!")
                 break
 
 
@@ -518,7 +530,11 @@ class BiLSTM:
         predLabels = [None]*len(sentences)
         sentenceLengths = self.getSentenceLengths(sentences)
 
+        bar_count = 0
+        bar = Progbar(len(sentenceLengths))
         for indices in sentenceLengths.values():
+            bar.update(bar_count+1) # used to display progress bar
+            bar_count += 1
             nnInput = []
             for featureName in self.params['featureNames']:
                 inputData = np.asarray([sentences[idx][featureName] for idx in indices])
@@ -546,9 +562,6 @@ class BiLSTM:
             return self.computeAccScores(modelName, devMatrix, testMatrix)
 
     def computeF1Scores(self, modelName, devMatrix, testMatrix):
-        #train_pre, train_rec, train_f1 = self.computeF1(modelName, self.datasets[modelName]['trainMatrix'])
-        #print "Train-Data: Prec: %.3f, Rec: %.3f, F1: %.4f" % (train_pre, train_rec, train_f1)
-
         dev_pre, dev_rec, dev_f1 = self.computeF1(modelName, devMatrix)
         logging.info("Dev-Data: Prec: %.3f, Rec: %.3f, F1: %.4f" % (dev_pre, dev_rec, dev_f1))
 
@@ -631,7 +644,6 @@ class BiLSTM:
             for dataName in ['trainMatrix', 'devMatrix', 'testMatrix']:
                 for sentenceIdx in range(len(dataset[dataName])):
                     dataset[dataName][sentenceIdx]['taskID'] = [taskID] * len(dataset[dataName][sentenceIdx]['tokens'])
-
             taskID += 1
 
 
@@ -661,6 +673,16 @@ class BiLSTM:
             h5file.attrs['params'] = json.dumps(self.params)
             h5file.attrs['modelName'] = modelName
             h5file.attrs['labelKey'] = self.datasets[modelName]['label']
+
+        # Create a symbolic link to link the best model
+        filename = modelName + "_latest.h5"
+        latest_link = os.path.join(directory, filename)
+        try:
+            if os.path.islink(latest_link):
+                os.remove(latest_link)
+            os.symlink(os.path.basename(savePath), latest_link)
+        except Exception as e:
+            logging.error(e)
 
 
     @staticmethod

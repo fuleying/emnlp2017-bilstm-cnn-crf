@@ -41,7 +41,8 @@ def readCoNLL(inputPath, cols, commentSymbol=None, valTransformation=None):
     for line in open(inputPath):
         line = line.strip()
         # sentence end
-        if len(line) == 0 or (commentSymbol != None and line.startswith(commentSymbol)):
+        if len(line) == 0 or line[0]=="\n" \
+                or (commentSymbol != None and line.startswith(commentSymbol)):
             if hasData:
                 sentences.append(sentence)
                 sentence = {name: [] for name in sentenceTemplate.keys()}

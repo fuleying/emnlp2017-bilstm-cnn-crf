@@ -33,9 +33,9 @@ The repository [elmo-bilstm-cnn-crf](https://github.com/UKPLab/elmo-bilstm-cnn-c
 If enabled during the trainings process, models are stored to the `data/Lambert/models` folder. Those models can be loaded and be used to tag new data. An example is implemented in `RunModel.py`:
 
 ```
-python RunModel.py data/Lambert/models/modelname.h5 data/Lambert/input.txt
+python RunModel.py data/Lambert/models/conll2003_latest.h5 data/Lambert/input.txt
 ```
-This script will read the model `data/Lambert/models/modelname.h5` as well as the text file `data/Lambert/input.txt`. The text will be splitted into sentences and tokenized using NLTK. The tagged output will be written in a CoNLL format to standard out.
+This script will read the model `data/Lambert/models/conll2003_latest.h5` as well as the text file `data/Lambert/input.txt`. The text will be splitted into sentences and tokenized using NLTK. The tagged output will be written in a CoNLL format to standard out.
 
 The format of `input.txt` is:
 ```
@@ -47,7 +47,7 @@ If your input file is in `CoNLL format` (each line a token, sentences separated 
 Please use the script `RunModel_ConLL_Format.py` as follow:
 
 ```
-python RunModel_CoNLL_Format.py data/Lambert/models/modelname.h5 data/Lambert/input.conll
+python RunModel_CoNLL_Format.py data/Lambert/models/conll2003_latest.h5 data/Lambert/input.conll
 ```
 
 

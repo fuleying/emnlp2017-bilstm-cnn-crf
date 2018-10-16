@@ -1,6 +1,11 @@
-# This script trains the BiLSTM-CNN-CRF architecture for Chunking in English using
-# the CoNLL 2000 dataset (https://www.clips.uantwerpen.be/conll2000/chunking/).
-# The code use the embeddings by Komninos et al. (https://www.cs.york.ac.uk/nlp/extvec/)
+# -*- coding=utf-8 -
+"""
+Created on Saturday August 21 2018
+
+@author: Lambert
+"""
+
+
 from __future__ import print_function
 import os
 import logging
@@ -32,17 +37,18 @@ logger.addHandler(ch)
 #
 ######################################################
 datasets = {
-    'conll2003':                                   #Name of the dataset
-        {'columns': {0:'tokens', 1:'POS', 3:'ner_BIO'},   #CoNLL format for the input data. Column 0 contains tokens, column 2 contains POS and column 2 contains chunk information using BIO encoding
-         'label': 'ner_BIO',                                #Which column we like to predict
-         'evaluate': True,                                  #Should we evaluate on this task? Set true always for single task setups
-         'commentSymbol': '-DOCSTART'}                             #Lines in the input data starting with this string will be skipped. Can be used to skip comments
+    'csnews_bio':                            #Name of the dataset
+        {'columns': {0:'tokens', 1:'POS', 3:'ner_BIO'},   #CoNLL format for the input data. Column 0 contains tokens, column 1 contains POS and column 2 contains chunk information using BIO encoding
+         'label': 'ner_BIO',                 #Which column we like to predict
+         'evaluate': True,                   #Should we evaluate on this task? Set true always for single task setups
+         'commentSymbol': '-DOCSTART'}       #Lines in the input data starting with this string will be skipped. Can be used to skip comments
 }
 
-# :: Path on your computer to the word embeddings. Embeddings by Komninos et al. will be downloaded automatically ::
+# Path on your computer to the word embeddings.
 embeddingsPath = 'data/Lambert/embeddings/glove.6B.100d.txt'
 
-# :: Prepares the dataset to be used with the LSTM-network. Creates and stores cPickle files in the pkl/ folder ::
+# Prepares the dataset to be used with the LSTM-network.
+# Creates and stores cPickle files in the pkl/ folder
 pickleFile = perpareDataset(embeddingsPath, datasets, padOneTokenSentence=True)
 
 
@@ -57,6 +63,8 @@ pickleFile = perpareDataset(embeddingsPath, datasets, padOneTokenSentence=True)
 embeddings, mappings, data = loadDatasetPickle(pickleFile)
 
 # Some network hyperparameters
+
+# # No character-level embeddings
 # params = {'classifier': ['CRF'], 'LSTM-Size': [100, 100], 'dropout': (0.25, 0.25)}
 
 # # BiLSTM-CNNs-CRF Model
@@ -67,9 +75,11 @@ embeddings, mappings, data = loadDatasetPickle(pickleFile)
 params = {'classifier': ['CRF'], 'LSTM-Size': [100, 100], 'dropout': (0.25, 0.25),
           'charEmbeddings': 'LSTM', 'maxCharLength': 50}
 
+
 model = BiLSTM(params)
 model.setMappings(mappings, embeddings)
-model.setDataset(datasets, data)
-model.storeResults('data/Lambert/results/conll2003.csv') #Path to store performance scores for dev / test
+model.setDataset(datasets, data, epoch_size=1656)
+# Path to store performance scores for dev / test
+model.storeResults('data/Lambert/results/csnews.csv')
 model.modelSavePath = "data/Lambert/models/[ModelName]_[DevScore]_[TestScore]_[Epoch].h5"
 model.fit(epochs=50)
